@@ -1,121 +1,162 @@
 const express = require('express');
 const cors = require('cors');
-const { Pool } = require('pg');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
 
 const app = express();
-app.use(cors());
+
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'] }));
 app.use(express.json());
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/dj_booking'
+const dbPath = path.join(__dirname, 'database.sqlite');
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) {
+    console.error('Error opening database:', err.message);
+  } else {
+    console.log('Connected to SQLite database.');
+  }
 });
 
-// Initialize Database Tables & Default DJ Account
-const initDb = async () => {
-  try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        email VARCHAR(255) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        role VARCHAR(50) DEFAULT 'client'
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT UNIQUE NOT NULL,
+      password TEXT NOT NULL,
+      role TEXT DEFAULT 'client'
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS bookings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_email TEXT NOT NULL,
+      client_name TEXT NOT NULL,
+      event_type TEXT NOT NULL,
+      event_date TEXT NOT NULL,
+      notes TEXT,
+      status TEXT DEFAULT 'pending',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    INSERT INTO users (id, email, password, role)
+    VALUES (1, 'admin@dj.com', 'admin123', 'dj')
+    ON CONFLICT(id) DO UPDATE SET email='admin@dj.com', password='admin123'
+  `);
+});
+
+// API Endpoints
+app.post('/api/bookings/register-and-book', (req, res) => {
+  const email = (req.body.client_email || '').toLowerCase().trim();
+  const password = (req.body.password || '').trim();
+  const client_name = (req.body.client_name || '').trim();
+  const event_type = (req.body.event_type || 'General').trim();
+  const event_date = (req.body.event_date || '').trim();
+  const notes = (req.body.notes || '').trim();
+
+  if (!email || !password || !client_name || !event_date) {
+    return res.status(400).json({ error: 'Missing required details (Name, Email, Password, Date).' });
+  }
+
+  db.get('SELECT * FROM users WHERE LOWER(email) = ?', [email], (err, user) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    const createBooking = () => {
+      db.run(
+        `INSERT INTO bookings (client_email, client_name, event_type, event_date, notes, status)
+         VALUES (?, ?, ?, ?, ?, 'pending')`,
+        [email, client_name, event_type, event_date, notes],
+        function (err2) {
+          if (err2) return res.status(500).json({ error: err2.message });
+          db.get('SELECT * FROM bookings WHERE id = ?', [this.lastID], (err3, savedBooking) => {
+            if (err3) return res.status(500).json({ error: err3.message });
+            res.status(201).json({ success: true, email, booking: savedBooking });
+          });
+        }
       );
+    };
 
-      CREATE TABLE IF NOT EXISTS bookings (
-        id SERIAL PRIMARY KEY,
-        client_email VARCHAR(255) NOT NULL,
-        client_name VARCHAR(255) NOT NULL,
-        event_type VARCHAR(100) NOT NULL,
-        event_date DATE NOT NULL,
-        notes TEXT,
-        status VARCHAR(50) DEFAULT 'pending',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-    `);
-
-    // Create default DJ user automatically if it doesn't exist
-    await pool.query(`
-      INSERT INTO users (email, password, role)
-      VALUES ('admin@dj.com', 'admin123', 'dj')
-      ON CONFLICT (email) DO NOTHING;
-    `);
-
-    console.log("Database initialized and DJ account seeded.");
-  } catch (err) {
-    console.error("Database init error:", err);
-  }
-};
-initDb();
-
-// 1. Submit a new booking request
-app.post('/api/bookings', async (req, res) => {
-  const { client_email, client_name, event_type, event_date, notes } = req.body;
-  try {
-    const result = await pool.query(
-      `INSERT INTO bookings (client_email, client_name, event_type, event_date, notes)
-       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [client_email, client_name, event_type, event_date, notes]
-    );
-    res.status(201).json({ success: true, booking: result.rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 2. Client tracks ONLY their own requests
-app.get('/api/bookings/my-requests', async (req, res) => {
-  const { email } = req.query;
-  if (!email) return res.status(400).json({ error: "Email required" });
-  
-  try {
-    const result = await pool.query(
-      `SELECT * FROM bookings WHERE client_email = $1 ORDER BY created_at DESC`,
-      [email]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 3. DJ Login
-app.post('/api/dj/login', async (req, res) => {
-  const { email, password } = req.body;
-  try {
-    const result = await pool.query(`SELECT * FROM users WHERE email = $1 AND role = 'dj'`, [email]);
-    if (result.rows.length === 0 || result.rows[0].password !== password) {
-      return res.status(401).json({ error: "Invalid DJ credentials" });
+    if (!user) {
+      db.run('INSERT INTO users (email, password, role) VALUES (?, ?, "client")', [email, password], (err2) => {
+        if (err2) return res.status(500).json({ error: err2.message });
+        createBooking();
+      });
+    } else {
+      createBooking();
     }
-    res.json({ success: true, message: "Logged in as DJ" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+  });
 });
 
-// 4. DJ Dashboard: View ALL client requests
-app.get('/api/dj/bookings', async (req, res) => {
-  try {
-    const result = await pool.query(`SELECT * FROM bookings ORDER BY created_at DESC`);
-    res.json(result.rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+app.post('/api/client/login', (req, res) => {
+  const email = (req.body.email || '').toLowerCase().trim();
+  const password = (req.body.password || '').trim();
+
+  db.get('SELECT * FROM users WHERE LOWER(email) = ? AND role = "client"', [email], (err, user) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!user || user.password !== password) {
+      return res.status(401).json({ error: 'Invalid email or password.' });
+    }
+    res.json({ success: true, email: user.email });
+  });
 });
 
-// 5. DJ Actions: Accept/Decline bookings
-app.patch('/api/dj/bookings/:id', async (req, res) => {
+app.get('/api/bookings/my-requests', (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: 'Email parameter required' });
+
+  db.all('SELECT * FROM bookings WHERE LOWER(client_email) = LOWER(?) ORDER BY id DESC', [email.trim()], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows || []);
+  });
+});
+
+app.post('/api/dj/login', (req, res) => {
+  const email = (req.body.email || '').toLowerCase().trim();
+  const password = (req.body.password || '').trim();
+
+  db.get('SELECT * FROM users WHERE LOWER(email) = ? AND role = "dj"', [email], (err, user) => {
+    if (err) return res.status(500).json({ error: err.message });
+    if (!user || user.password !== password) {
+      return res.status(401).json({ error: 'Invalid credentials.' });
+    }
+    res.json({ success: true, message: 'Logged in as DJ' });
+  });
+});
+
+app.get('/api/dj/bookings', (req, res) => {
+  db.all('SELECT * FROM bookings ORDER BY id DESC', [], (err, rows) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json(rows || []);
+  });
+});
+
+app.patch('/api/dj/bookings/:id', (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
-  try {
-    const result = await pool.query(
-      `UPDATE bookings SET status = $1 WHERE id = $2 RETURNING *`,
-      [status, id]
-    );
-    res.json(result.rows[0]);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+
+  db.run('UPDATE bookings SET status = ? WHERE id = ?', [status, id], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    db.get('SELECT * FROM bookings WHERE id = ?', [id], (err2, updated) => {
+      if (err2) return res.status(500).json({ error: err2.message });
+      res.json(updated);
+    });
+  });
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.delete('/api/bookings/:id', (req, res) => {
+  const { id } = req.params;
+  db.run('DELETE FROM bookings WHERE id = ?', [id], (err) => {
+    if (err) return res.status(500).json({ error: err.message });
+    res.json({ success: true });
+  });
+});
+
+// Force event loop active so Node v22 never exits
+setInterval(() => {}, 1000 << 30);
+
+const PORT = 5000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Backend server active on http://0.0.0.0:${PORT}`);
+});

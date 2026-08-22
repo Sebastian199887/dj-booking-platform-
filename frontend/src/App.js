@@ -1,314 +1,341 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-const API_BASE = process.env.REACT_APP_API_URL || "";
+const API_BASE = 'https://dj-booking-platform-uour.onrender.com';
 
-const styles = {
-  container: { minHeight: '100vh', backgroundColor: '#09090b', color: '#f4f4f5', fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", padding: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center' },
-  wrapper: { maxWidth: '1000px', width: '100%', flex: 1 },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem', borderBottom: '1px solid #27272a', paddingBottom: '1rem' },
-  brand: { fontSize: '1.75rem', fontWeight: '800', background: 'linear-gradient(135deg, #a855f7, #ec4899)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' },
-  nav: { display: 'flex', gap: '0.5rem', background: '#18181b', padding: '0.25rem', borderRadius: '10px', border: '1px solid #27272a' },
-  navBtn: { padding: '0.5rem 1rem', borderRadius: '8px', border: 'none', background: 'transparent', color: '#a1a1aa', cursor: 'pointer', fontWeight: '600', transition: 'all 0.2s' },
-  activeNavBtn: { background: '#27272a', color: '#fff' },
-  
-  metricsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' },
-  metricCard: { background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '1.25rem' },
-  metricValue: { fontSize: '2rem', fontWeight: '800', margin: '0.25rem 0' },
-  metricLabel: { fontSize: '0.85rem', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' },
+function App() {
+  const [activeTab, setActiveTab] = useState('book');
+  const [clientEmail, setClientEmail] = useState(localStorage.getItem('clientEmail') || '');
+  const [isDjLoggedIn, setIsDjLoggedIn] = useState(localStorage.getItem('djLoggedIn') === 'true');
 
-  card: { background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '1.5rem', marginBottom: '1.5rem' },
-  input: { width: '100%', padding: '0.75rem 1rem', margin: '0.5rem 0 1.25rem', borderRadius: '8px', border: '1px solid #3f3f46', background: '#09090b', color: '#fff', boxSizing: 'border-box', fontSize: '0.95rem' },
-  btnPrimary: { padding: '0.75rem 1.5rem', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #a855f7, #ec4899)', color: '#fff', cursor: 'pointer', fontWeight: '700', width: '100%', fontSize: '0.95rem' },
-  
-  badge: (status = 'pending') => ({
-    padding: '0.25rem 0.75rem',
-    borderRadius: '9999px',
-    fontSize: '0.75rem',
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    display: 'inline-block',
-    background: status === 'accepted' ? 'rgba(34, 197, 94, 0.15)' : status === 'declined' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(234, 179, 8, 0.15)',
-    color: status === 'accepted' ? '#4ade80' : status === 'declined' ? '#f87171' : '#facc15',
-    border: `1px solid ${status === 'accepted' ? '#16a34a' : status === 'declined' ? '#dc2626' : '#ca8a04'}`
-  })
-};
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [eventType, setEventType] = useState('Wedding');
+  const [eventDate, setEventDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [loading, setLoading] = useState(false);
 
-export default function App() {
-  const [tab, setTab] = useState('book');
-  
-  const [form, setForm] = useState({ client_name: '', client_email: '', event_type: 'Wedding', event_date: '', notes: '' });
-  const [submitted, setSubmitted] = useState(false);
-
-  const [lookupEmail, setLookupEmail] = useState('');
+  const [clientLoginEmail, setClientLoginEmail] = useState('');
+  const [clientLoginPassword, setClientLoginPassword] = useState('');
   const [myBookings, setMyBookings] = useState([]);
-  const [hasSearched, setHasSearched] = useState(false);
 
-  const [isDjLoggedIn, setIsDjLoggedIn] = useState(false);
-  const [djCreds, setDjCreds] = useState({ email: '', password: '' });
+  const [djEmail, setDjEmail] = useState('');
+  const [djPassword, setDjPassword] = useState('');
   const [allBookings, setAllBookings] = useState([]);
-  const [filterStatus, setFilterStatus] = useState('all');
 
-  const submitBooking = async (e) => {
-    e.preventDefault();
+  const fetchMyBookings = async (targetEmail) => {
     try {
-      await fetch(`${API_BASE}/api/bookings`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form)
-      });
-      setSubmitted(true);
-    } catch (err) {
-      alert("Error submitting request");
-    }
-  };
-
-  const fetchMyBookings = async (e) => {
-    if (e) e.preventDefault();
-    if (!lookupEmail) return;
-    try {
-      const res = await fetch(`${API_BASE}/api/bookings/my-requests?email=${encodeURIComponent(lookupEmail)}`);
+      const res = await fetch(`${API_BASE}/api/bookings/my-requests?email=${encodeURIComponent(targetEmail)}`);
       const data = await res.json();
-      if (Array.isArray(data)) {
-        setMyBookings(data);
-      } else {
-        setMyBookings([]);
-      }
+      if (Array.isArray(data)) setMyBookings(data);
     } catch (err) {
-      setMyBookings([]);
-    } finally {
-      setHasSearched(true);
+      console.error("Error loading client bookings:", err);
     }
   };
 
-  const djLogin = async (e) => {
-    e.preventDefault();
-    try {
-      const res = await fetch(`${API_BASE}/api/dj/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(djCreds)
-      });
-      if (res.ok) {
-        setIsDjLoggedIn(true);
-        loadDjBookings();
-      } else {
-        alert("Invalid DJ Credentials");
-      }
-    } catch (err) {
-      alert("Server error during login");
-    }
-  };
-
-  const loadDjBookings = async () => {
+  const fetchAllBookings = async () => {
     try {
       const res = await fetch(`${API_BASE}/api/dj/bookings`);
       const data = await res.json();
       if (Array.isArray(data)) setAllBookings(data);
     } catch (err) {
-      setAllBookings([]);
+      console.error("Error loading DJ bookings:", err);
     }
   };
 
-  const updateStatus = async (id, status) => {
+  useEffect(() => {
+    if (clientEmail) fetchMyBookings(clientEmail);
+    if (isDjLoggedIn) fetchAllBookings();
+  }, [clientEmail, isDjLoggedIn]);
+
+  const handleRegisterAndBook = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/bookings/register-and-book`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_name: fullName,
+          client_email: email,
+          password: password,
+          event_type: eventType,
+          event_date: eventDate,
+          notes: notes
+        })
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        alert("Booking submitted & Account created successfully!");
+        localStorage.setItem('clientEmail', data.email);
+        setClientEmail(data.email);
+        fetchMyBookings(data.email);
+        setActiveTab('client');
+        setFullName('');
+        setEmail('');
+        setPassword('');
+        setNotes('');
+      } else {
+        alert(data.error || "Failed to submit booking.");
+      }
+    } catch (err) {
+      alert("Error reaching backend server.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClientLogin = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${API_BASE}/api/client/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: clientLoginEmail, password: clientLoginPassword })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        localStorage.setItem('clientEmail', data.email);
+        setClientEmail(data.email);
+        fetchMyBookings(data.email);
+      } else {
+        alert(data.error || "Invalid credentials");
+      }
+    } catch (err) {
+      alert("Server error");
+    }
+  };
+
+  const handleDjLogin = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${API_BASE}/api/dj/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: djEmail, password: djPassword })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        localStorage.setItem('djLoggedIn', 'true');
+        setIsDjLoggedIn(true);
+        fetchAllBookings();
+      } else {
+        alert(data.error || "Invalid credentials");
+      }
+    } catch (err) {
+      alert("Server error");
+    }
+  };
+
+  const handleUpdateStatus = async (id, status) => {
     try {
       await fetch(`${API_BASE}/api/dj/bookings/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status })
       });
-      loadDjBookings();
+      fetchAllBookings();
+      if (clientEmail) fetchMyBookings(clientEmail);
     } catch (err) {
       alert("Failed to update status");
     }
   };
 
-  const filteredBookings = Array.isArray(allBookings)
-    ? allBookings.filter(b => filterStatus === 'all' ? true : b.status === filterStatus)
-    : [];
+  const handleDeleteBooking = async (id) => {
+    if (!window.confirm("Delete this booking request?")) return;
+    try {
+      await fetch(`${API_BASE}/api/bookings/${id}`, { method: 'DELETE' });
+      fetchAllBookings();
+      if (clientEmail) fetchMyBookings(clientEmail);
+    } catch (err) {
+      alert("Failed to delete booking");
+    }
+  };
 
   return (
-    <div style={styles.container}>
-      <div style={styles.wrapper}>
-        
-        <header style={styles.header}>
-          <div style={styles.brand}>DJ Console</div>
-          <nav style={styles.nav}>
-            <button style={{...styles.navBtn, ...(tab === 'book' ? styles.activeNavBtn : {})}} onClick={() => setTab('book')}>Book Event</button>
-            <button style={{...styles.navBtn, ...(tab === 'lookup' ? styles.activeNavBtn : {})}} onClick={() => setTab('lookup')}>Client Portal</button>
-            <button style={{...styles.navBtn, ...(tab === 'dj' ? styles.activeNavBtn : {})}} onClick={() => setTab('dj')}>DJ Studio</button>
-          </nav>
-        </header>
+    <div style={{ backgroundColor: '#0f0c1b', color: '#fff', minHeight: '100vh', fontFamily: 'sans-serif', padding: '20px' }}>
+      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', borderBottom: '1px solid #2a2438', paddingBottom: '15px' }}>
+        <h1 style={{ color: '#e040fb', margin: 0 }}>DJ Console</h1>
+        <nav style={{ display: 'flex', gap: '15px' }}>
+          <button onClick={() => setActiveTab('book')} style={tabBtn(activeTab === 'book')}>Book Event</button>
+          <button onClick={() => setActiveTab('client')} style={tabBtn(activeTab === 'client')}>Client Portal</button>
+          <button onClick={() => setActiveTab('dj')} style={tabBtn(activeTab === 'dj')}>DJ Studio</button>
+        </nav>
+      </header>
 
-        {/* 1. PUBLIC BOOKING FORM */}
-        {tab === 'book' && (
-          <div style={styles.card}>
-            <h2 style={{ marginTop: 0 }}>Request a DJ Performance</h2>
-            <p style={{ color: '#a1a1aa', marginBottom: '1.5rem' }}>Fill out your event details below to reserve your date.</p>
-            
-            {submitted ? (
-              <div style={{ textAlign: 'center', padding: '2rem 0' }}>
-                <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🎉</div>
-                <h3>Request Received!</h3>
-                <p style={{ color: '#a1a1aa' }}>Your request is pending review. Check status anytime in the Client Portal using <strong>{form.client_email}</strong>.</p>
-                <button style={{...styles.btnPrimary, width: 'auto', marginTop: '1rem'}} onClick={() => { setSubmitted(false); setTab('lookup'); setLookupEmail(form.client_email); }}>Go to Client Portal</button>
-              </div>
-            ) : (
-              <form onSubmit={submitBooking}>
-                <label style={{ fontSize: '0.85rem', color: '#a1a1aa' }}>FULL NAME</label>
-                <input style={styles.input} required value={form.client_name} onChange={e => setForm({...form, client_name: e.target.value})} placeholder="e.g. Alex Morgan" />
-                
-                <label style={{ fontSize: '0.85rem', color: '#a1a1aa' }}>EMAIL ADDRESS</label>
-                <input style={styles.input} type="email" required value={form.client_email} onChange={e => setForm({...form, client_email: e.target.value})} placeholder="alex@example.com" />
-                
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
-                  <div>
-                    <label style={{ fontSize: '0.85rem', color: '#a1a1aa' }}>EVENT TYPE</label>
-                    <input style={styles.input} value={form.event_type} onChange={e => setForm({...form, event_type: e.target.value})} placeholder="Wedding, Birthday, Club" />
-                  </div>
-                  <div>
-                    <label style={{ fontSize: '0.85rem', color: '#a1a1aa' }}>EVENT DATE</label>
-                    <input style={styles.input} type="date" required value={form.event_date} onChange={e => setForm({...form, event_date: e.target.value})} />
-                  </div>
-                </div>
-
-                <label style={{ fontSize: '0.85rem', color: '#a1a1aa' }}>SPECIAL REQUESTS / NOTES</label>
-                <textarea style={{...styles.input, height: '90px', resize: 'vertical'}} value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="Genre preferences, equipment needs, venue details..." />
-
-                <button type="submit" style={styles.btnPrimary}>Submit Booking Request</button>
-              </form>
-            )}
-          </div>
-        )}
-
-        {/* 2. CLIENT DASHBOARD */}
-        {tab === 'lookup' && (
-          <div>
-            <div style={styles.card}>
-              <h2 style={{ marginTop: 0 }}>Client Dashboard</h2>
-              <form onSubmit={fetchMyBookings} style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-                <input style={{...styles.input, margin: 0}} type="email" required placeholder="Enter your booking email" value={lookupEmail} onChange={e => setLookupEmail(e.target.value)} />
-                <button type="submit" style={{...styles.btnPrimary, width: 'auto', whiteSpace: 'nowrap'}}>Search Requests</button>
-              </form>
-            </div>
-
-            {hasSearched && (
+      <main style={{ maxWidth: '800px', margin: '0 auto' }}>
+        {activeTab === 'book' && (
+          <div style={cardStyle}>
+            <h2 style={{ marginTop: 0, color: '#fff' }}>Request Performance & Create Account</h2>
+            <p style={{ color: '#aaa' }}>Submit your event request below. Setting a password creates your account so you can track and manage your application.</p>
+            <form onSubmit={handleRegisterAndBook} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
               <div>
-                <h3 style={{ marginBottom: '1rem', color: '#a1a1aa' }}>Your Booking Requests ({myBookings.length})</h3>
-                {myBookings.length === 0 ? (
-                  <div style={styles.card}><p style={{ color: '#a1a1aa', margin: 0 }}>No bookings found for this email address.</p></div>
-                ) : (
-                  myBookings.map(b => (
-                    <div key={b.id} style={styles.card}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
-                        <div>
-                          <h3 style={{ margin: '0 0 0.25rem 0' }}>{b.event_type}</h3>
-                          <span style={{ fontSize: '0.85rem', color: '#a1a1aa' }}>Requested for {b.event_date ? String(b.event_date).split('T')[0] : 'N/A'}</span>
-                        </div>
-                        <span style={styles.badge(b.status)}>{b.status || 'pending'}</span>
-                      </div>
-
-                      <div style={{ background: '#27272a', height: '6px', borderRadius: '3px', margin: '1.5rem 0', overflow: 'hidden' }}>
-                        <div style={{
-                          height: '100%',
-                          width: b.status === 'accepted' ? '100%' : b.status === 'declined' ? '100%' : '50%',
-                          background: b.status === 'accepted' ? '#22c55e' : b.status === 'declined' ? '#ef4444' : '#eab308',
-                          transition: 'width 0.3s ease'
-                        }} />
-                      </div>
-
-                      {b.notes && <p style={{ fontSize: '0.9rem', color: '#d4d4d8', background: '#09090b', padding: '0.75rem', borderRadius: '6px', border: '1px solid #27272a', margin: 0 }}>"{b.notes}"</p>}
-                    </div>
-                  ))
-                )}
+                <label style={labelStyle}>FULL NAME</label>
+                <input required type="text" value={fullName} onChange={e => setFullName(e.target.value)} style={inputStyle} />
               </div>
-            )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                <div>
+                  <label style={labelStyle}>EMAIL ADDRESS</label>
+                  <input required type="email" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>CREATE PORTAL PASSWORD</label>
+                  <input required type="password" value={password} onChange={e => setPassword(e.target.value)} style={inputStyle} />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                <div>
+                  <label style={labelStyle}>EVENT TYPE</label>
+                  <select value={eventType} onChange={e => setEventType(e.target.value)} style={inputStyle}>
+                    <option value="Wedding">Wedding</option>
+                    <option value="Corporate">Corporate Event</option>
+                    <option value="Club/Party">Club / Private Party</option>
+                    <option value="Festival">Festival</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>EVENT DATE</label>
+                  <input required type="date" value={eventDate} onChange={e => setEventDate(e.target.value)} style={inputStyle} />
+                </div>
+              </div>
+              <div>
+                <label style={labelStyle}>SPECIAL REQUESTS / NOTES</label>
+                <textarea rows="4" value={notes} onChange={e => setNotes(e.target.value)} style={inputStyle}></textarea>
+              </div>
+              <button disabled={loading} type="submit" style={submitBtn}>
+                {loading ? 'Creating Account & Booking...' : 'Create Account & Submit Request'}
+              </button>
+            </form>
           </div>
         )}
 
-        {/* 3. DJ COMMAND CENTER */}
-        {tab === 'dj' && (
-          <div>
-            {!isDjLoggedIn ? (
-              <div style={{...styles.card, maxWidth: '400px', margin: '4rem auto 0'}}>
-                <h2 style={{ textAlign: 'center', marginTop: 0 }}>DJ Portal Login</h2>
-                <form onSubmit={djLogin}>
-                  <label style={{ fontSize: '0.85rem', color: '#a1a1aa' }}>EMAIL</label>
-                  <input style={styles.input} type="email" value={djCreds.email} onChange={e => setDjCreds({...djCreds, email: e.target.value})} placeholder="admin@dj.com" />
-                  
-                  <label style={{ fontSize: '0.85rem', color: '#a1a1aa' }}>PASSWORD</label>
-                  <input style={styles.input} type="password" value={djCreds.password} onChange={e => setDjCreds({...djCreds, password: e.target.value})} placeholder="••••••••" />
-                  
-                  <button type="submit" style={styles.btnPrimary}>Access Command Center</button>
+        {activeTab === 'client' && (
+          <div style={cardStyle}>
+            {!clientEmail ? (
+              <div>
+                <h2>Client Portal Login</h2>
+                <form onSubmit={handleClientLogin} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <input placeholder="Email" required type="email" value={clientLoginEmail} onChange={e => setClientLoginEmail(e.target.value)} style={inputStyle} />
+                  <input placeholder="Password" required type="password" value={clientLoginPassword} onChange={e => setClientLoginPassword(e.target.value)} style={inputStyle} />
+                  <button type="submit" style={submitBtn}>Log In</button>
                 </form>
               </div>
             ) : (
               <div>
-                <div style={styles.metricsGrid}>
-                  <div style={styles.metricCard}>
-                    <div style={styles.metricLabel}>Total Requests</div>
-                    <div style={styles.metricValue}>{allBookings.length}</div>
-                  </div>
-                  <div style={styles.metricCard}>
-                    <div style={styles.metricLabel}>Pending Review</div>
-                    <div style={{...styles.metricValue, color: '#facc15'}}>{allBookings.filter(b => b.status === 'pending').length}</div>
-                  </div>
-                  <div style={styles.metricCard}>
-                    <div style={styles.metricLabel}>Confirmed Gigs</div>
-                    <div style={{...styles.metricValue, color: '#4ade80'}}>{allBookings.filter(b => b.status === 'accepted').length}</div>
-                  </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <h2>Your Booking Requests ({clientEmail})</h2>
+                  <button onClick={() => { localStorage.removeItem('clientEmail'); setClientEmail(''); }} style={dangerBtn}>Logout</button>
                 </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-                  <div style={styles.nav}>
-                    {['all', 'pending', 'accepted', 'declined'].map(s => (
-                      <button key={s} style={{...styles.navBtn, ...(filterStatus === s ? styles.activeNavBtn : {}), textTransform: 'capitalize'}} onClick={() => setFilterStatus(s)}>
-                        {s}
-                      </button>
-                    ))}
+                {myBookings.length === 0 ? <p>No bookings found.</p> : myBookings.map(b => (
+                  <div key={b.id} style={bookingItemStyle}>
+                    <h3>{b.event_type} - {b.event_date}</h3>
+                    <p>Status: <strong style={{ color: b.status === 'accepted' ? '#00e676' : b.status === 'declined' ? '#ff5252' : '#ffab00' }}>{b.status.toUpperCase()}</strong></p>
+                    <p>Notes: {b.notes || 'None'}</p>
                   </div>
-                  <button style={{...styles.navBtn, background: '#27272a', color: '#fff'}} onClick={() => setIsDjLoggedIn(false)}>Sign Out</button>
-                </div>
-
-                {filteredBookings.length === 0 ? (
-                  <div style={styles.card}><p style={{ color: '#a1a1aa', margin: 0 }}>No bookings match this filter.</p></div>
-                ) : (
-                  filteredBookings.map(b => (
-                    <div key={b.id} style={styles.card}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.25rem' }}>
-                            <h3 style={{ margin: 0 }}>{b.client_name}</h3>
-                            <span style={styles.badge(b.status)}>{b.status}</span>
-                          </div>
-                          <div style={{ fontSize: '0.875rem', color: '#a1a1aa' }}>
-                            {b.event_type} • <span style={{ color: '#ec4899' }}>{b.event_date ? String(b.event_date).split('T')[0] : 'N/A'}</span> • {b.client_email}
-                          </div>
-                        </div>
-
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          {b.status !== 'accepted' && (
-                            <button style={{...styles.navBtn, background: '#16a34a', color: '#fff'}} onClick={() => updateStatus(b.id, 'accepted')}>Accept</button>
-                          )}
-                          {b.status !== 'declined' && (
-                            <button style={{...styles.navBtn, background: '#dc2626', color: '#fff'}} onClick={() => updateStatus(b.id, 'declined')}>Decline</button>
-                          )}
-                        </div>
-                      </div>
-
-                      {b.notes && (
-                        <div style={{ marginTop: '1rem', background: '#09090b', padding: '0.75rem 1rem', borderRadius: '8px', border: '1px solid #27272a', fontSize: '0.9rem', color: '#a1a1aa' }}>
-                          <strong style={{ color: '#d4d4d8' }}>Notes:</strong> {b.notes}
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
+                ))}
               </div>
             )}
           </div>
         )}
 
-      </div>
+        {activeTab === 'dj' && (
+          <div style={cardStyle}>
+            {!isDjLoggedIn ? (
+              <div>
+                <h2>DJ Studio Login</h2>
+                <form onSubmit={handleDjLogin} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  <input placeholder="DJ Email (admin@dj.com)" required type="email" value={djEmail} onChange={e => setDjEmail(e.target.value)} style={inputStyle} />
+                  <input placeholder="Password (admin123)" required type="password" value={djPassword} onChange={e => setDjPassword(e.target.value)} style={inputStyle} />
+                  <button type="submit" style={submitBtn}>Access Studio</button>
+                </form>
+              </div>
+            ) : (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                  <h2>Manager Dashboard</h2>
+                  <button onClick={() => { localStorage.removeItem('djLoggedIn'); setIsDjLoggedIn(false); }} style={dangerBtn}>Logout DJ</button>
+                </div>
+                {allBookings.length === 0 ? <p>No client requests submitted yet.</p> : allBookings.map(b => (
+                  <div key={b.id} style={bookingItemStyle}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <h3>{b.client_name} ({b.client_email})</h3>
+                      <span>Status: <strong>{b.status.toUpperCase()}</strong></span>
+                    </div>
+                    <p><strong>Event:</strong> {b.event_type} on {b.event_date}</p>
+                    <p><strong>Notes:</strong> {b.notes || 'None'}</p>
+                    <div style={{ display: 'flex', gap: '10px', marginTop: '10px' }}>
+                      <button onClick={() => handleUpdateStatus(b.id, 'accepted')} style={successBtn}>Accept</button>
+                      <button onClick={() => handleUpdateStatus(b.id, 'declined')} style={warningBtn}>Decline</button>
+                      <button onClick={() => handleDeleteBooking(b.id)} style={dangerBtn}>Delete</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
     </div>
   );
 }
+
+const tabBtn = (active) => ({
+  background: active ? '#e040fb' : 'transparent',
+  color: '#fff',
+  border: '1px solid #e040fb',
+  padding: '8px 16px',
+  borderRadius: '6px',
+  cursor: 'pointer'
+});
+
+const cardStyle = {
+  backgroundColor: '#18142a',
+  padding: '25px',
+  borderRadius: '12px',
+  border: '1px solid #2a2438'
+};
+
+const labelStyle = {
+  display: 'block',
+  fontSize: '12px',
+  color: '#aaa',
+  marginBottom: '5px'
+};
+
+const inputStyle = {
+  width: '100%',
+  padding: '10px',
+  backgroundColor: '#0f0c1b',
+  border: '1px solid #2a2438',
+  borderRadius: '6px',
+  color: '#fff',
+  boxSizing: 'border-box'
+};
+
+const submitBtn = {
+  width: '100%',
+  padding: '12px',
+  backgroundColor: '#e040fb',
+  color: '#fff',
+  border: 'none',
+  borderRadius: '6px',
+  fontWeight: 'bold',
+  cursor: 'pointer'
+};
+
+const dangerBtn = { background: '#ff5252', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' };
+const successBtn = { background: '#00e676', color: '#000', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' };
+const warningBtn = { background: '#ffab00', color: '#000', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer' };
+
+const bookingItemStyle = {
+  backgroundColor: '#0f0c1b',
+  padding: '15px',
+  borderRadius: '8px',
+  marginBottom: '15px',
+  border: '1px solid #2a2438'
+};
+
+export default App;
