@@ -34,6 +34,14 @@ const styles = {
     fontSize: '1rem',
     margin: 0
   },
+  footer: {
+    textAlign: "center",
+    padding: "2rem 0",
+    marginTop: "3rem",
+    borderTop: "1px solid rgba(255, 255, 255, 0.08)",
+    color: "#64748b",
+    fontSize: "0.875rem"
+  },
   nav: {
     display: 'flex',
     gap: '0.75rem',
@@ -478,7 +486,8 @@ function App() {
         )}
 
       </div>
-    </div>
+      <footer style={styles.footer}>Made by Sebastian Hart & Claude</footer>
+</div>
   );
 }
 
