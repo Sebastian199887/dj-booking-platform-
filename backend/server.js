@@ -1,104 +1,113 @@
 const express = require('express');
 const cors = require('cors');
-const mysql = require('mysql2');
+const { Pool } = require('pg');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// In-memory credential storage (replace defaults on setup)
-let currentAdminUser = 'localhost';
-let currentAdminPassword = 'pasword123';
-
-// Database Connection
-const db = mysql.createConnection({
-  host: 'localhost',
-  user: 'root',
-  password: '', // Update with your MySQL password if set
-  database: 'dj_booking_db'
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/dj_booking'
 });
 
-db.connect(err => {
-  if (err) {
-    console.error('Database connection failed:', err.stack);
-    return;
+// Initialize Database Tables
+const initDb = async () => {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        role VARCHAR(50) DEFAULT 'client'
+      );
+
+      CREATE TABLE IF NOT EXISTS bookings (
+        id SERIAL PRIMARY KEY,
+        client_email VARCHAR(255) NOT NULL,
+        client_name VARCHAR(255) NOT NULL,
+        event_type VARCHAR(100) NOT NULL,
+        event_date DATE NOT NULL,
+        notes TEXT,
+        status VARCHAR(50) DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log("Database initialized");
+  } catch (err) {
+    console.error("Database init error:", err);
   }
-  console.log('Connected to MySQL Database.');
+};
+initDb();
+
+// 1. Submit a new booking request
+app.post('/api/bookings', async (req, res) => {
+  const { client_email, client_name, event_type, event_date, notes } = req.body;
+  try {
+    const result = await pool.query(
+      `INSERT INTO bookings (client_email, client_name, event_type, event_date, notes)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [client_email, client_name, event_type, event_date, notes]
+    );
+    res.status(201).json({ success: true, booking: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// --- ROUTES ---
-
-// 1. Admin Login & Check
-app.post('/api/admin/dashboard', (req, res) => {
-  const { admin_username, admin_password } = req.body;
-
-  // Initial access if credentials have not been configured yet
-  if (!currentAdminUser || (admin_username === "" && admin_password === "")) {
-    return res.json({
-      status: 'success',
-      mustSetupCredentials: true,
-      data: []
-    });
-  }
-
-  // Authenticate against saved credentials
-  if (admin_username === currentAdminUser && admin_password === currentAdminPassword) {
-    db.query('SELECT * FROM bookings ORDER BY event_date ASC', (err, results) => {
-      if (err) return res.status(500).json({ status: 'error', message: 'Database query failed' });
-      res.json({ status: 'success', mustSetupCredentials: false, data: results });
-    });
-  } else {
-    res.status(401).json({ status: 'error', message: 'Invalid Admin Credentials' });
-  }
-});
-
-// 2. Credentials Setup / Update
-app.post('/api/admin/update-credentials', (req, res) => {
-  const { current_password, new_username, new_password } = req.body;
-
-  if (currentAdminUser && current_password !== currentAdminPassword) {
-    return res.status(403).json({ status: 'error', message: 'Current password incorrect' });
-  }
-
-  currentAdminUser = new_username;
-  currentAdminPassword = new_password;
-
-  res.json({ status: 'success', message: 'Credentials updated successfully' });
-});
-
-// 3. Create Booking
-app.post('/api/bookings', (req, res) => {
-  const { client_name, client_email, event_date, start_time, end_time, event_location, event_description, must_play_songs, dont_play_songs } = req.body;
-  const access_token = 'DJ-' + Math.random().toString(36).substring(2, 8).toUpperCase();
-
-  const query = `INSERT INTO bookings (client_name, client_email, event_date, start_time, end_time, event_location, event_description, must_play_songs, dont_play_songs, access_token) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+// 2. Client tracks ONLY their own requests
+app.get('/api/bookings/my-requests', async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).json({ error: "Email required" });
   
-  db.query(query, [client_name, client_email, event_date, start_time, end_time, event_location, event_description, must_play_songs, dont_play_songs, access_token], (err) => {
-    if (err) return res.status(500).json({ status: 'error', message: err.message });
-    res.json({ status: 'success', access_token });
-  });
+  try {
+    const result = await pool.query(
+      `SELECT * FROM bookings WHERE client_email = $1 ORDER BY created_at DESC`,
+      [email]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// 4. Client Reservation Lookup
-app.post('/api/bookings/my-reservation', (req, res) => {
-  const { access_token } = req.body;
-  db.query('SELECT * FROM bookings WHERE access_token = ?', [access_token], (err, results) => {
-    if (err || results.length === 0) {
-      return res.status(404).json({ status: 'error', message: 'Reservation not found' });
+// 3. DJ Login
+app.post('/api/dj/login', async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const result = await pool.query(`SELECT * FROM users WHERE email = $1 AND role = 'dj'`, [email]);
+    if (result.rows.length === 0 || result.rows[0].password !== password) {
+      return res.status(401).json({ error: "Invalid DJ credentials" });
     }
-    res.json({ status: 'success', data: results[0] });
-  });
+    res.json({ success: true, message: "Logged in as DJ" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// 5. Public Calendar
-app.get('/api/bookings/public-calendar', (req, res) => {
-  db.query('SELECT event_date, start_time, end_time FROM bookings ORDER BY event_date ASC', (err, results) => {
-    if (err) return res.status(500).json({ status: 'error', message: err.message });
-    res.json({ status: 'success', data: results });
-  });
+// 4. DJ Dashboard: View ALL client requests
+app.get('/api/dj/bookings', async (req, res) => {
+  try {
+    const result = await pool.query(`SELECT * FROM bookings ORDER BY created_at DESC`);
+    res.json(result.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-const PORT = 5000;
-app.listen(PORT, () => {
-  console.log(`Backend server running on http://localhost:${PORT}`);
+// 5. DJ Actions: Accept/Decline bookings
+app.patch('/api/dj/bookings/:id', async (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE bookings SET status = $1 WHERE id = $2 RETURNING *`,
+      [status, id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
