@@ -11,19 +11,16 @@ const styles = {
   navBtn: { padding: '0.5rem 1rem', borderRadius: '8px', border: 'none', background: 'transparent', color: '#a1a1aa', cursor: 'pointer', fontWeight: '600', transition: 'all 0.2s' },
   activeNavBtn: { background: '#27272a', color: '#fff' },
   
-  // Dashboard Metrics
   metricsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '2rem' },
   metricCard: { background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '1.25rem' },
   metricValue: { fontSize: '2rem', fontWeight: '800', margin: '0.25rem 0' },
   metricLabel: { fontSize: '0.85rem', color: '#a1a1aa', textTransform: 'uppercase', letterSpacing: '0.05em' },
 
-  // Content Cards & Tables
   card: { background: '#18181b', border: '1px solid #27272a', borderRadius: '12px', padding: '1.5rem', marginBottom: '1.5rem' },
   input: { width: '100%', padding: '0.75rem 1rem', margin: '0.5rem 0 1.25rem', borderRadius: '8px', border: '1px solid #3f3f46', background: '#09090b', color: '#fff', boxSizing: 'border-box', fontSize: '0.95rem' },
   btnPrimary: { padding: '0.75rem 1.5rem', borderRadius: '8px', border: 'none', background: 'linear-gradient(135deg, #a855f7, #ec4899)', color: '#fff', cursor: 'pointer', fontWeight: '700', width: '100%', fontSize: '0.95rem' },
   
-  // Status Badges
-  badge: (status) => ({
+  badge: (status = 'pending') => ({
     padding: '0.25rem 0.75rem',
     borderRadius: '9999px',
     fontSize: '0.75rem',
@@ -39,15 +36,13 @@ const styles = {
 export default function App() {
   const [tab, setTab] = useState('book');
   
-  // Public Booking Form State
   const [form, setForm] = useState({ client_name: '', client_email: '', event_type: 'Wedding', event_date: '', notes: '' });
   const [submitted, setSubmitted] = useState(false);
 
-  // Client Dashboard State
   const [lookupEmail, setLookupEmail] = useState('');
-  const [myBookings, setMyBookings] = useState(null);
+  const [myBookings, setMyBookings] = useState([]);
+  const [hasSearched, setHasSearched] = useState(false);
 
-  // DJ Dashboard State
   const [isDjLoggedIn, setIsDjLoggedIn] = useState(false);
   const [djCreds, setDjCreds] = useState({ email: '', password: '' });
   const [allBookings, setAllBookings] = useState([]);
@@ -55,58 +50,86 @@ export default function App() {
 
   const submitBooking = async (e) => {
     e.preventDefault();
-    await fetch(`${API_BASE}/api/bookings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(form)
-    });
-    setSubmitted(true);
+    try {
+      await fetch(`${API_BASE}/api/bookings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+      setSubmitted(true);
+    } catch (err) {
+      alert("Error submitting request");
+    }
   };
 
   const fetchMyBookings = async (e) => {
     if (e) e.preventDefault();
-    const res = await fetch(`${API_BASE}/api/bookings/my-requests?email=${lookupEmail}`);
-    const data = await res.json();
-    setMyBookings(data);
+    if (!lookupEmail) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/bookings/my-requests?email=${encodeURIComponent(lookupEmail)}`);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        setMyBookings(data);
+      } else {
+        setMyBookings([]);
+      }
+    } catch (err) {
+      setMyBookings([]);
+    } finally {
+      setHasSearched(true);
+    }
   };
 
   const djLogin = async (e) => {
     e.preventDefault();
-    const res = await fetch(`${API_BASE}/api/dj/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(djCreds)
-    });
-    if (res.ok) {
-      setIsDjLoggedIn(true);
-      loadDjBookings();
-    } else {
-      alert("Invalid DJ Credentials");
+    try {
+      const res = await fetch(`${API_BASE}/api/dj/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(djCreds)
+      });
+      if (res.ok) {
+        setIsDjLoggedIn(true);
+        loadDjBookings();
+      } else {
+        alert("Invalid DJ Credentials");
+      }
+    } catch (err) {
+      alert("Server error during login");
     }
   };
 
   const loadDjBookings = async () => {
-    const res = await fetch(`${API_BASE}/api/dj/bookings`);
-    const data = await res.json();
-    setAllBookings(data);
+    try {
+      const res = await fetch(`${API_BASE}/api/dj/bookings`);
+      const data = await res.json();
+      if (Array.isArray(data)) setAllBookings(data);
+    } catch (err) {
+      setAllBookings([]);
+    }
   };
 
   const updateStatus = async (id, status) => {
-    await fetch(`${API_BASE}/api/dj/bookings/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status })
-    });
-    loadDjBookings();
+    try {
+      await fetch(`${API_BASE}/api/dj/bookings/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status })
+      });
+      loadDjBookings();
+    } catch (err) {
+      alert("Failed to update status");
+    }
   };
 
-  const filteredBookings = allBookings.filter(b => filterStatus === 'all' ? true : b.status === filterStatus);
+  const filteredBookings = Array.isArray(allBookings)
+    ? allBookings.filter(b => filterStatus === 'all' ? true : b.status === filterStatus)
+    : [];
 
   return (
     <div style={styles.container}>
       <div style={styles.wrapper}>
         
-        {/* Navigation Bar */}
         <header style={styles.header}>
           <div style={styles.brand}>DJ Console</div>
           <nav style={styles.nav}>
@@ -168,7 +191,7 @@ export default function App() {
               </form>
             </div>
 
-            {myBookings && (
+            {hasSearched && (
               <div>
                 <h3 style={{ marginBottom: '1rem', color: '#a1a1aa' }}>Your Booking Requests ({myBookings.length})</h3>
                 {myBookings.length === 0 ? (
@@ -179,12 +202,11 @@ export default function App() {
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1rem' }}>
                         <div>
                           <h3 style={{ margin: '0 0 0.25rem 0' }}>{b.event_type}</h3>
-                          <span style={{ fontSize: '0.85rem', color: '#a1a1aa' }}>Requested for {b.event_date?.split('T')[0]}</span>
+                          <span style={{ fontSize: '0.85rem', color: '#a1a1aa' }}>Requested for {b.event_date ? String(b.event_date).split('T')[0] : 'N/A'}</span>
                         </div>
-                        <span style={styles.badge(b.status)}>{b.status}</span>
+                        <span style={styles.badge(b.status)}>{b.status || 'pending'}</span>
                       </div>
 
-                      {/* Status Progress Bar */}
                       <div style={{ background: '#27272a', height: '6px', borderRadius: '3px', margin: '1.5rem 0', overflow: 'hidden' }}>
                         <div style={{
                           height: '100%',
@@ -221,7 +243,6 @@ export default function App() {
               </div>
             ) : (
               <div>
-                {/* Metric Cards */}
                 <div style={styles.metricsGrid}>
                   <div style={styles.metricCard}>
                     <div style={styles.metricLabel}>Total Requests</div>
@@ -237,7 +258,6 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Filter Tabs & Controls */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
                   <div style={styles.nav}>
                     {['all', 'pending', 'accepted', 'declined'].map(s => (
@@ -249,7 +269,6 @@ export default function App() {
                   <button style={{...styles.navBtn, background: '#27272a', color: '#fff'}} onClick={() => setIsDjLoggedIn(false)}>Sign Out</button>
                 </div>
 
-                {/* Booking List */}
                 {filteredBookings.length === 0 ? (
                   <div style={styles.card}><p style={{ color: '#a1a1aa', margin: 0 }}>No bookings match this filter.</p></div>
                 ) : (
@@ -262,11 +281,10 @@ export default function App() {
                             <span style={styles.badge(b.status)}>{b.status}</span>
                           </div>
                           <div style={{ fontSize: '0.875rem', color: '#a1a1aa' }}>
-                            {b.event_type} • <span style={{ color: '#ec4899' }}>{b.event_date?.split('T')[0]}</span> • {b.client_email}
+                            {b.event_type} • <span style={{ color: '#ec4899' }}>{b.event_date ? String(b.event_date).split('T')[0] : 'N/A'}</span> • {b.client_email}
                           </div>
                         </div>
 
-                        {/* DJ Action Buttons */}
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           {b.status !== 'accepted' && (
                             <button style={{...styles.navBtn, background: '#16a34a', color: '#fff'}} onClick={() => updateStatus(b.id, 'accepted')}>Accept</button>
