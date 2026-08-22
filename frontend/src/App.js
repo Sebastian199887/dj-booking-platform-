@@ -338,9 +338,13 @@ const bookingItemStyle = {
   border: '1px solid #2a2438'
 };
 
-<footer style={{ textAlign: 'center', padding: '20px', marginTop: '40px', color: '#666', borderTop: '1px solid #eaeaea' }}>
-  <p>DJ Booking Platform &copy; 2026 | Created by Sebastian Hart Claude</p>
-</footer>
+      )}
 
+      <footer style={{ textAlign: 'center', padding: '20px', marginTop: '40px', color: '#666', borderTop: '1px solid #eaeaea' }}>
+        <p>DJ Booking Platform &copy; 2026 | Created by Sebastian Hart Claude</p>
+      </footer>
+    </div>
+  );
+}
 
 export default App;
