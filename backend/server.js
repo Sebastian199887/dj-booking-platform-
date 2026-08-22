@@ -10,7 +10,7 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/dj_booking'
 });
 
-// Initialize Database Tables
+// Initialize Database Tables & Default DJ Account
 const initDb = async () => {
   try {
     await pool.query(`
@@ -32,7 +32,15 @@ const initDb = async () => {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
-    console.log("Database initialized");
+
+    // Create default DJ user automatically if it doesn't exist
+    await pool.query(`
+      INSERT INTO users (email, password, role)
+      VALUES ('admin@dj.com', 'admin123', 'dj')
+      ON CONFLICT (email) DO NOTHING;
+    `);
+
+    console.log("Database initialized and DJ account seeded.");
   } catch (err) {
     console.error("Database init error:", err);
   }
