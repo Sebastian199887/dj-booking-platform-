@@ -17,7 +17,38 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  // Additional states for bookings list, DJ login, etc. can go here
+  const [clientLoginEmail, setClientLoginEmail] = useState('');
+  const [clientLoginPassword, setClientLoginPassword] = useState('');
+  const [myBookings, setMyBookings] = useState([]);
+
+  const [djEmail, setDjEmail] = useState('');
+  const [djPassword, setDjPassword] = useState('');
+  const [allBookings, setAllBookings] = useState([]);
+
+  const fetchMyBookings = async (targetEmail) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/bookings/my-requests?email=${encodeURIComponent(targetEmail)}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setMyBookings(data);
+    } catch (err) {
+      console.error("Error loading client bookings:", err);
+    }
+  };
+
+  const fetchAllBookings = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/dj/bookings`);
+      const data = await res.json();
+      if (Array.isArray(data)) setAllBookings(data);
+    } catch (err) {
+      console.error("Error loading DJ bookings:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (clientEmail) fetchMyBookings(clientEmail);
+    if (isDjLoggedIn) fetchAllBookings();
+  }, [clientEmail, isDjLoggedIn]);
 
   const handleBookingSubmit = async (e) => {
     e.preventDefault();
@@ -60,6 +91,50 @@ function App() {
     }
   };
 
+  const handleClientLogin = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${API_BASE}/api/clients/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: clientLoginEmail, password: clientLoginPassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        localStorage.setItem('clientEmail', clientLoginEmail);
+        setClientEmail(clientLoginEmail);
+        fetchMyBookings(clientLoginEmail);
+        setMessage('Logged in successfully!');
+      } else {
+        setMessage(data.error || 'Login failed');
+      }
+    } catch (err) {
+      setMessage('Server connection error');
+    }
+  };
+
+  const handleDjLogin = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${API_BASE}/api/dj/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: djEmail, password: djPassword })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        localStorage.setItem('djLoggedIn', 'true');
+        setIsDjLoggedIn(true);
+        fetchAllBookings();
+        setMessage('DJ Logged in successfully!');
+      } else {
+        setMessage(data.error || 'DJ Login failed');
+      }
+    } catch (err) {
+      setMessage('Server connection error');
+    }
+  };
+
   const bookingItemStyle = {
     backgroundColor: '#0f0c1b',
     padding: '15px',
@@ -96,12 +171,12 @@ function App() {
         </button>
       </div>
 
+      {message && <p style={{ padding: '10px', backgroundColor: '#2a2438', borderRadius: '4px', textAlign: 'center', marginBottom: '20px' }}>{message}</p>}
+
       {activeTab === 'book' && (
         <div style={bookingItemStyle}>
           <h2>Request Performance & Create Account</h2>
           <p>Submit your event request below. Setting a password creates your account so you can track and manage your application.</p>
-          
-          {message && <p style={{ padding: '10px', backgroundColor: '#2a2438', borderRadius: '4px' }}>{message}</p>}
 
           <form onSubmit={handleBookingSubmit}>
             <div style={{ marginBottom: '15px' }}>
@@ -195,7 +270,118 @@ function App() {
         </div>
       )}
 
-      {/* Footer with Creator Credit */}
+      {activeTab === 'client' && (
+        <div style={bookingItemStyle}>
+          <h2>Client Portal</h2>
+          {!clientEmail ? (
+            <form onSubmit={handleClientLogin}>
+              <p>Log in with your email and portal password to view your requests.</p>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>EMAIL</label>
+                <input 
+                  type="email" 
+                  value={clientLoginEmail} 
+                  onChange={(e) => setClientLoginEmail(e.target.value)} 
+                  required 
+                  style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #2a2438', backgroundColor: '#1d1730', color: '#fff' }}
+                />
+              </div>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>PASSWORD</label>
+                <input 
+                  type="password" 
+                  value={clientLoginPassword} 
+                  onChange={(e) => setClientLoginPassword(e.target.value)} 
+                  required 
+                  style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #2a2438', backgroundColor: '#1d1730', color: '#fff' }}
+                />
+              </div>
+              <button type="submit" style={{ width: '100%', padding: '12px', backgroundColor: '#6246ea', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
+                Log In
+              </button>
+            </form>
+          ) : (
+            <div>
+              <p>Logged in as: <strong>{clientEmail}</strong></p>
+              <button 
+                onClick={() => { localStorage.removeItem('clientEmail'); setClientEmail(''); }}
+                style={{ padding: '8px 15px', backgroundColor: '#2a2438', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', marginBottom: '20px' }}
+              >
+                Log Out
+              </button>
+              <h3>Your Bookings</h3>
+              {myBookings.length === 0 ? (
+                <p>No bookings found.</p>
+              ) : (
+                myBookings.map((b) => (
+                  <div key={b.id} style={{ backgroundColor: '#1d1730', padding: '10px', borderRadius: '4px', marginBottom: '10px' }}>
+                    <p><strong>Event:</strong> {b.event_type} on {b.event_date}</p>
+                    <p><strong>Status:</strong> {b.status}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'dj' && (
+        <div style={bookingItemStyle}>
+          <h2>DJ Admin Panel</h2>
+          {!isDjLoggedIn ? (
+            <form onSubmit={handleDjLogin}>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>DJ EMAIL</label>
+                <input 
+                  type="email" 
+                  value={djEmail} 
+                  onChange={(e) => setDjEmail(e.target.value)} 
+                  required 
+                  style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #2a2438', backgroundColor: '#1d1730', color: '#fff' }}
+                />
+              </div>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>PASSWORD</label>
+                <input 
+                  type="password" 
+                  value={djPassword} 
+                  onChange={(e) => setDjPassword(e.target.value)} 
+                  required 
+                  style={{ width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #2a2438', backgroundColor: '#1d1730', color: '#fff' }}
+                />
+              </div>
+              <button type="submit" style={{ width: '100%', padding: '12px', backgroundColor: '#6246ea', color: '#fff', border: 'none', borderRadius: '4px', fontWeight: 'bold', cursor: 'pointer' }}>
+                DJ Log In
+              </button>
+            </form>
+          ) : (
+            <div>
+              <button 
+                onClick={() => { localStorage.removeItem('djLoggedIn'); setIsDjLoggedIn(false); }}
+                style={{ padding: '8px 15px', backgroundColor: '#2a2438', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', marginBottom: '20px' }}
+              >
+                Log Out Admin
+              </button>
+              <h3>All Client Bookings</h3>
+              {allBookings.length === 0 ? (
+                <p>No client requests yet.</p>
+              ) : (
+                allBookings.map((b) => (
+                  <div key={b.id} style={{ backgroundColor: '#1d1730', padding: '12px', borderRadius: '6px', marginBottom: '10px' }}>
+                    <p><strong>Name:</strong> {b.full_name}</p>
+                    <p><strong>Email:</strong> {b.email}</p>
+                    <p><strong>Phone:</strong> {b.phone || 'N/A'}</p>
+                    <p><strong>Event:</strong> {b.event_type} on {b.event_date}</p>
+                    <p><strong>Status:</strong> {b.status}</p>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Creator Credit Footer */}
       <footer style={{ textAlign: 'center', padding: '20px', marginTop: '40px', color: '#888', borderTop: '1px solid #2a2438' }}>
         <p>DJ Booking Platform &copy; 2026 | Created by Sebastian Hart Claude</p>
       </footer>
